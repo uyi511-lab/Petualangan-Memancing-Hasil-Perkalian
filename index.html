@@ -1,0 +1,967 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Petualangan Memancing Perkalian - AR Motion Gesture</title>
+
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600;700&family=Quicksand:wght@500;700&display=swap" rel="stylesheet">
+
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <!-- MediaPipe Hands -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+
+    <style>
+        body {
+            font-family: 'Fredoka', 'Quicksand', sans-serif;
+            user-select: none;
+            overflow: hidden;
+            background-color: #0f172a;
+        }
+
+        .btn-bounce {
+            transition: transform 0.15s ease, box-shadow 0.15s ease;
+        }
+        .btn-bounce:hover {
+            transform: translateY(-3px) scale(1.02);
+            box-shadow: 0 10px 20px rgba(0,0,0,0.2);
+        }
+        .btn-bounce:active {
+            transform: translateY(1px) scale(0.98);
+        }
+
+        /* Modal Overlay Animations */
+        .modal-enter {
+            animation: popIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+        }
+        @keyframes popIn {
+            0% { opacity: 0; transform: scale(0.8); }
+            100% { opacity: 1; transform: scale(1); }
+        }
+
+        /* Glassmorphism effects */
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.9);
+            backdrop-filter: blur(10px);
+            border: 3px solid rgba(255, 255, 255, 0.5);
+        }
+
+        /* Custom Scrollbar for Modal content */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 10px;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #3b82f6;
+            border-radius: 10px;
+        }
+    </style>
+</head>
+<body class="bg-slate-900 text-slate-800 h-screen w-screen relative overflow-hidden flex flex-col justify-between">
+
+    <!-- WEBCAM FEED (Hidden offscreen or used for video input) -->
+    <video id="webcam" class="hidden" playsinline></video>
+
+    <!-- HEADER / DASHBOARD TOP BAR -->
+    <header class="absolute top-0 left-0 right-0 z-20 px-4 py-3 flex justify-between items-center bg-gradient-to-b from-black/60 to-transparent text-white pointer-events-auto">
+        <!-- Logo & Title -->
+        <div class="flex items-center gap-3">
+            <div class="w-12 h-12 bg-amber-400 rounded-2xl flex items-center justify-center text-amber-900 font-extrabold text-2xl shadow-lg border-2 border-amber-200">
+                <i class="fa-solid font-bold fa-fish-fins"></i>
+            </div>
+            <div>
+                <h1 class="text-xl md:text-2xl font-bold tracking-wide text-amber-300 drop-shadow">Memancing Perkalian</h1>
+                <p class="text-xs text-amber-100/80">Kelas IV SD • AR Motion Gesture</p>
+            </div>
+        </div>
+
+        <!-- Game Stats & Indicators -->
+        <div class="flex items-center gap-3 md:gap-6">
+            <!-- Level / Question Counter -->
+            <div class="bg-blue-900/80 border-2 border-blue-400/50 backdrop-blur rounded-2xl px-4 py-1.5 flex items-center gap-2 shadow">
+                <i class="fa-solid fa-list-check text-blue-300 text-lg"></i>
+                <div class="text-left">
+                    <span class="text-[10px] uppercase tracking-wider text-blue-200 block -mb-1">Soal</span>
+                    <span id="questionProgress" class="text-lg font-bold text-white">1/15</span>
+                </div>
+            </div>
+
+            <!-- Score Badge -->
+            <div class="bg-emerald-900/80 border-2 border-emerald-400/50 backdrop-blur rounded-2xl px-4 py-1.5 flex items-center gap-2 shadow">
+                <i class="fa-solid fa-trophy text-yellow-400 text-lg"></i>
+                <div class="text-left">
+                    <span class="text-[10px] uppercase tracking-wider text-emerald-200 block -mb-1">Skor Total</span>
+                    <span id="scoreText" class="text-lg font-bold text-yellow-300">0</span>
+                </div>
+            </div>
+
+            <!-- Camera Feedback Mirror (Thumbnail) -->
+            <div class="relative w-14 h-14 md:w-16 md:h-16 rounded-2xl border-2 border-white/70 overflow-hidden bg-black shadow-lg">
+                <canvas id="cameraPreview" class="w-full h-full object-cover -scale-x-100"></canvas>
+                <span id="handStatusBadge" class="absolute bottom-1 left-1/2 -translate-x-1/2 text-[9px] bg-red-500/90 text-white font-semibold px-1.5 py-0.5 rounded-full whitespace-nowrap">
+                    Cari Tangan
+                </span>
+            </div>
+
+            <!-- Pause Button -->
+            <button id="btnPause" class="bg-amber-500 hover:bg-amber-400 text-amber-950 font-bold p-3 rounded-2xl shadow-lg border-2 border-amber-300 btn-bounce flex items-center justify-center">
+                <i class="fa-solid fa-pause text-xl"></i>
+            </button>
+        </div>
+    </header>
+
+    <!-- MAIN GAME CANVAS CONTAINER -->
+    <main class="relative w-full h-full flex-grow flex items-center justify-center">
+        <canvas id="gameCanvas" class="w-full h-full block cursor-crosshair"></canvas>
+
+        <!-- Gesture Helper Overlay (Floating Info) -->
+        <div id="gestureGuide" class="absolute bottom-4 left-4 bg-slate-900/80 text-white backdrop-blur border border-slate-700 p-3 rounded-2xl flex items-center gap-3 shadow-xl z-10 text-xs md:text-sm">
+            <div class="w-10 h-10 rounded-xl bg-blue-500/20 border border-blue-400 flex items-center justify-center text-blue-300 text-xl">
+                <i class="fa-solid fa-hand-pointer"></i>
+            </div>
+            <div>
+                <p class="font-bold text-amber-300">Petunjuk Kontrol Tangan:</p>
+                <p class="text-slate-200">Arahkan kail: <b>Gerakkan Telunjuk</b> • Menangkap Ikan: <b>Kepit/Genggam Tangan</b></p>
+            </div>
+        </div>
+    </main>
+
+    <!-- OVERLAY MODAL: START / MAIN MENU -->
+    <div id="modalStart" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4">
+        <div class="glass-panel max-w-lg w-full rounded-3xl p-6 md:p-8 text-center shadow-2xl modal-enter border-4 border-amber-300">
+            <div class="w-24 h-24 bg-gradient-to-tr from-amber-400 to-yellow-300 rounded-3xl mx-auto flex items-center justify-center shadow-lg transform -rotate-3 mb-4 border-4 border-white">
+                <i class="fa-solid fa-fish text-5xl text-amber-900"></i>
+            </div>
+            <h2 class="text-3xl md:text-4xl font-extrabold text-slate-800 mb-2">Petualangan Memancing</h2>
+            <p class="text-amber-600 font-bold text-lg mb-4">Perkalian Matematika (Kelas IV SD)</p>
+            
+            <div class="bg-amber-50 rounded-2xl p-4 text-left mb-6 border border-amber-200 space-y-2 text-sm text-slate-700">
+                <p class="font-bold text-slate-800 border-b border-amber-200 pb-1"><i class="fa-solid fa-circle-info text-amber-500 mr-1"></i> Cara Bermain AR Motion Gesture:</p>
+                <div class="flex items-start gap-2">
+                    <i class="fa-solid fa-video text-blue-500 mt-1"></i>
+                    <span>Izinkan browser menggunakan <b>Webcam</b> komputer/laptop Anda.</span>
+                </div>
+                <div class="flex items-start gap-2">
+                    <i class="fa-solid fa-hand-point-up text-amber-500 mt-1"></i>
+                    <span><b>Gerakkan Telunjuk</b> di udara untuk menggeser kail pancing ke kiri & kanan.</span>
+                </div>
+                <div class="flex items-start gap-2">
+                    <i class="fa-solid fa-hand-back-fist text-emerald-500 mt-1"></i>
+                    <span><b>Kepit jari (Pinch)</b> atau <b>Kepalkan Tangan</b> untuk menurunkan kail dan menangkap ikan jawaban!</span>
+                </div>
+                <p class="text-xs text-slate-500 italic pt-1">*Catatan: Jika kamera tidak aktif, Anda tetap bisa bermain menggunakan Mouse.</p>
+            </div>
+
+            <button id="btnStartGame" class="w-full bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white font-extrabold text-xl py-4 rounded-2xl shadow-xl border-b-4 border-emerald-800 btn-bounce flex items-center justify-center gap-3">
+                <i class="fa-solid fa-play"></i> Mulai Petualangan
+            </button>
+        </div>
+    </div>
+
+    <!-- OVERLAY MODAL: PAUSE GAME -->
+    <div id="modalPause" class="fixed inset-0 z-50 hidden flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4">
+        <div class="glass-panel max-w-sm w-full rounded-3xl p-6 text-center shadow-2xl modal-enter border-4 border-blue-400">
+            <div class="w-16 h-16 bg-blue-500 text-white rounded-2xl mx-auto flex items-center justify-center text-3xl mb-3 shadow">
+                <i class="fa-solid fa-pause"></i>
+            </div>
+            <h3 class="text-2xl font-bold text-slate-800 mb-1">Permainan Dijeda</h3>
+            <p class="text-slate-600 text-sm mb-6">Istirahat sejenak dulu yuk!</p>
+
+            <div class="space-y-3">
+                <button id="btnResume" class="w-full bg-emerald-500 hover:bg-emerald-400 text-white font-bold py-3 rounded-2xl shadow border-b-4 border-emerald-700 btn-bounce flex items-center justify-center gap-2">
+                    <i class="fa-solid fa-play"></i> Lanjutkan
+                </button>
+                <button id="btnRestart" class="w-full bg-amber-500 hover:bg-amber-400 text-amber-950 font-bold py-3 rounded-2xl shadow border-b-4 border-amber-700 btn-bounce flex items-center justify-center gap-2">
+                    <i class="fa-solid fa-rotate-right"></i> Ulangi Dari Awal
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- OVERLAY MODAL: EDUKASI FEEDBACK JAWABAN SALAH -->
+    <div id="modalFeedback" class="fixed inset-0 z-50 hidden flex items-center justify-center bg-slate-950/85 backdrop-blur-md p-4">
+        <div class="glass-panel max-w-md w-full rounded-3xl p-6 text-center shadow-2xl modal-enter border-4 border-rose-400">
+            <div class="w-16 h-16 bg-rose-100 text-rose-600 rounded-2xl mx-auto flex items-center justify-center text-3xl mb-3 border-2 border-rose-300">
+                <i class="fa-solid fa-circle-xmark"></i>
+            </div>
+            <h3 class="text-2xl font-extrabold text-rose-600 mb-1">Upps, Jawaban Kurang Tepat!</h3>
+            <p class="text-slate-600 text-sm mb-4">Yuk kita pelajari cara menghitungnya bersama-sama:</p>
+
+            <!-- Card Penjelasan Cara Menghitung -->
+            <div id="feedbackContent" class="bg-amber-50 border-2 border-amber-200 rounded-2xl p-4 text-left font-sans mb-5 space-y-2 text-slate-800 text-sm">
+                <!-- Dynamic Content injected via JS -->
+            </div>
+
+            <button id="btnTryAgain" class="w-full bg-blue-600 hover:bg-blue-500 text-white font-extrabold text-lg py-3 rounded-2xl shadow-lg border-b-4 border-blue-800 btn-bounce flex items-center justify-center gap-2">
+                <i class="fa-solid fa-arrow-rotate-left"></i> Coba Lagi Soal Ini
+            </button>
+        </div>
+    </div>
+
+    <!-- OVERLAY MODAL: GAME OVER / RESULTS PAGE -->
+    <div id="modalResult" class="fixed inset-0 z-50 hidden flex items-center justify-center bg-slate-950/90 backdrop-blur-md p-4">
+        <div class="glass-panel max-w-lg w-full rounded-3xl p-6 md:p-8 text-center shadow-2xl modal-enter border-4 border-yellow-400">
+            <div class="w-20 h-20 bg-yellow-400 text-amber-900 rounded-3xl mx-auto flex items-center justify-center text-4xl mb-3 shadow-lg border-4 border-white">
+                <i class="fa-solid fa-trophy"></i>
+            </div>
+            <h2 class="text-3xl font-extrabold text-slate-800">Petualangan Selesai!</h2>
+            <p id="motivationText" class="text-amber-600 font-bold mb-6">Hebat Sekali! Kamu Petualang Sejati!</p>
+
+            <!-- Statistics Grid -->
+            <div class="grid grid-cols-3 gap-3 mb-6">
+                <div class="bg-blue-50 border border-blue-200 rounded-2xl p-3 text-center">
+                    <span class="text-xs text-blue-600 font-bold block mb-1">Skor Akhir</span>
+                    <span id="resTotalScore" class="text-2xl font-extrabold text-blue-700">150</span>
+                </div>
+                <div class="bg-emerald-50 border border-emerald-200 rounded-2xl p-3 text-center">
+                    <span class="text-xs text-emerald-600 font-bold block mb-1">Jawaban Benar</span>
+                    <span id="resCorrectCount" class="text-2xl font-extrabold text-emerald-700">15</span>
+                </div>
+                <div class="bg-rose-50 border border-rose-200 rounded-2xl p-3 text-center">
+                    <span class="text-xs text-rose-600 font-bold block mb-1">Salah Jawab</span>
+                    <span id="resWrongCount" class="text-2xl font-extrabold text-rose-700">0</span>
+                </div>
+            </div>
+
+            <div class="flex gap-3">
+                <button id="btnPlayAgain" class="flex-1 bg-emerald-500 hover:bg-emerald-400 text-white font-extrabold py-3.5 rounded-2xl shadow border-b-4 border-emerald-700 btn-bounce flex items-center justify-center gap-2">
+                    <i class="fa-solid fa-rotate-right"></i> Main Lagi
+                </button>
+            </div>
+        </div>
+    </div>
+
+
+    <!-- GAME LOGIC SCRIPT -->
+    <script>
+        // =========================================================================
+        // 1. BANK SOAL PERKALIAN KELAS 4 SD (15 SOAL: 2-Digit × 1-Digit)
+        // =========================================================================
+        const QUESTION_BANK = [
+            { num1: 12, num2: 4, answer: 48, choices: [48, 44, 52] },
+            { num1: 15, num2: 3, answer: 45, choices: [35, 45, 50] },
+            { num1: 24, num2: 2, answer: 48, choices: [46, 48, 54] },
+            { num1: 14, num2: 5, answer: 70, choices: [60, 65, 70] },
+            { num1: 21, num2: 4, answer: 84, choices: [84, 81, 88] },
+            { num1: 16, num2: 3, answer: 48, choices: [42, 48, 51] },
+            { num1: 32, num2: 3, answer: 96, choices: [93, 96, 99] },
+            { num1: 25, num2: 3, answer: 75, choices: [70, 75, 80] },
+            { num1: 18, num2: 4, answer: 72, choices: [68, 72, 76] },
+            { num1: 23, num2: 3, answer: 69, choices: [66, 69, 72] },
+            { num1: 13, num2: 6, answer: 78, choices: [72, 78, 84] },
+            { num1: 41, num2: 2, answer: 82, choices: [82, 84, 80] },
+            { num1: 17, num2: 4, answer: 68, choices: [64, 68, 72] },
+            { num1: 22, num2: 4, answer: 88, choices: [84, 88, 92] },
+            { num1: 11, num2: 8, answer: 88, choices: [81, 88, 98] }
+        ];
+
+        // Shuffle choices array utility
+        function shuffleArray(array) {
+            const arr = [...array];
+            for (let i = arr.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [arr[i], arr[j]] = [arr[j], arr[i]];
+            }
+            return arr;
+        }
+
+        // =========================================================================
+        // 2. AUDIO SYNTHESIZER SYSTEM (Web Audio API - Tone Effects)
+        // =========================================================================
+        class AudioFX {
+            constructor() {
+                this.ctx = null;
+            }
+            init() {
+                if (!this.ctx) {
+                    this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+                }
+            }
+            playTone(freq, type, duration, delay = 0) {
+                if (!this.ctx) return;
+                setTimeout(() => {
+                    try {
+                        const osc = this.ctx.createOscillator();
+                        const gain = this.ctx.createGain();
+                        osc.type = type;
+                        osc.frequency.setValueAtTime(freq, this.ctx.currentTime);
+                        gain.gain.setValueAtTime(0.15, this.ctx.currentTime);
+                        gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + duration);
+                        osc.connect(gain);
+                        gain.connect(this.ctx.destination);
+                        osc.start();
+                        osc.stop(this.ctx.currentTime + duration);
+                    } catch (e) {}
+                }, delay);
+            }
+            playSuccess() {
+                this.init();
+                this.playTone(523.25, 'sine', 0.1, 0);   // C5
+                this.playTone(659.25, 'sine', 0.1, 100); // E5
+                this.playTone(783.99, 'sine', 0.2, 200); // G5
+                this.playTone(1046.50, 'sine', 0.3, 300);// C6
+            }
+            playError() {
+                this.init();
+                this.playTone(220, 'sawtooth', 0.15, 0);
+                this.playTone(185, 'sawtooth', 0.25, 120);
+            }
+            playSplash() {
+                this.init();
+                this.playTone(300, 'triangle', 0.08, 0);
+                this.playTone(150, 'sine', 0.15, 50);
+            }
+            playWin() {
+                this.init();
+                [523, 659, 783, 1046, 783, 1046].forEach((f, i) => {
+                    this.playTone(f, 'sine', 0.2, i * 120);
+                });
+            }
+        }
+        const sfx = new AudioFX();
+
+        // =========================================================================
+        // 3. GAME STATE & VARIABLES
+        // =========================================================================
+        let canvas, ctx, cameraCanvas, cameraCtx;
+        let gameActive = false;
+        let isPaused = false;
+        let currentQuestionIndex = 0;
+        let score = 0;
+        let correctAnswersCount = 0;
+        let wrongAnswersCount = 0;
+
+        // Hook Position & Animation State
+        let hookPos = { x: 0, y: 140, targetX: 0, isDropping: false, caughtFish: null };
+        const HOOK_SPEED = 8;
+        const HOOK_MAX_Y_RATIO = 0.85;
+
+        // Hand Gesture Tracking
+        let isHandDetected = false;
+        let isPinching = false;
+
+        // Fish Entities & Environment Animations
+        let fishes = [];
+        let bubbles = [];
+        let waterWaves = [];
+
+        // =========================================================================
+        // 4. INITIALIZATION & RESIZING
+        // =========================================================================
+        window.onload = function() {
+            canvas = document.getElementById('gameCanvas');
+            ctx = canvas.getContext('2d');
+
+            cameraCanvas = document.getElementById('cameraPreview');
+            cameraCtx = cameraCanvas.getContext('2d');
+
+            resizeCanvas();
+            window.addEventListener('resize', resizeCanvas);
+
+            // Bind Event Listeners
+            document.getElementById('btnStartGame').addEventListener('click', startGame);
+            document.getElementById('btnPause').addEventListener('click', pauseGame);
+            document.getElementById('btnResume').addEventListener('click', resumeGame);
+            document.getElementById('btnRestart').addEventListener('click', restartGame);
+            document.getElementById('btnTryAgain').addEventListener('click', closeFeedbackAndResume);
+            document.getElementById('btnPlayAgain').addEventListener('click', restartGame);
+
+            // Mouse Fallback Interaction
+            canvas.addEventListener('mousemove', (e) => {
+                if (!isHandDetected && gameActive && !isPaused) {
+                    const rect = canvas.getBoundingClientRect();
+                    hookPos.targetX = e.clientX - rect.left;
+                }
+            });
+            canvas.addEventListener('mousedown', () => {
+                if (!isHandDetected && gameActive && !isPaused && !hookPos.isDropping) {
+                    triggerHookDrop();
+                }
+            });
+
+            // Initialize MediaPipe
+            initMediaPipe();
+
+            // Init Waves & Bubbles Background
+            initEnvironment();
+
+            // Start Animation Loop
+            requestAnimationFrame(gameLoop);
+        };
+
+        function resizeCanvas() {
+            canvas.width = canvas.parentElement.clientWidth;
+            canvas.height = canvas.parentElement.clientHeight;
+            if (hookPos.x === 0) hookPos.x = canvas.width / 2;
+            hookPos.targetX = hookPos.x;
+        }
+
+        function initEnvironment() {
+            bubbles = [];
+            for (let i = 0; i < 20; i++) {
+                bubbles.push({
+                    x: Math.random() * window.innerWidth,
+                    y: Math.random() * window.innerHeight,
+                    radius: Math.random() * 4 + 2,
+                    speed: Math.random() * 1.5 + 0.5
+                });
+            }
+        }
+
+        // =========================================================================
+        // 5. MEDIAPIPE HAND GESTURE DETECTION
+        // =========================================================================
+        function initMediaPipe() {
+            const videoElement = document.getElementById('webcam');
+            const handStatusBadge = document.getElementById('handStatusBadge');
+
+            const hands = new Hands({
+                locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+            });
+
+            hands.setOptions({
+                maxNumHands: 1,
+                modelComplexity: 1,
+                minDetectionConfidence: 0.6,
+                minTrackingConfidence: 0.6
+            });
+
+            hands.onResults((results) => {
+                // Draw Camera Preview Mirror
+                cameraCtx.save();
+                cameraCtx.clearRect(0, 0, cameraCanvas.width, cameraCanvas.height);
+                cameraCtx.drawImage(results.image, 0, 0, cameraCanvas.width, cameraCanvas.height);
+
+                if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+                    isHandDetected = true;
+                    handStatusBadge.innerText = "Tangan Terdeteksi";
+                    handStatusBadge.className = "absolute bottom-1 left-1/2 -translate-x-1/2 text-[9px] bg-emerald-500/90 text-white font-semibold px-1.5 py-0.5 rounded-full whitespace-nowrap";
+
+                    const landmarks = results.multiHandLandmarks[0];
+
+                    // Draw hand skeleton on preview camera
+                    drawConnectors(cameraCtx, landmarks, HAND_CONNECTIONS, { color: '#10B981', lineWidth: 2 });
+                    drawLandmarks(cameraCtx, landmarks, { color: '#FBBF24', lineWidth: 1, radius: 2 });
+
+                    // Landmark 8 = Index Finger Tip, Landmark 4 = Thumb Tip
+                    const indexTip = landmarks[8];
+                    const thumbTip = landmarks[4];
+
+                    // Calculate X position mapped to canvas screen (mirrored webcam)
+                    const handX = (1 - indexTip.x) * canvas.width;
+                    hookPos.targetX = handX;
+
+                    // Calculate distance between Index Tip and Thumb Tip for Pinch / Grab
+                    const distance = Math.hypot(indexTip.x - thumbTip.x, indexTip.y - thumbTip.y);
+
+                    // Pinch Threshold
+                    if (distance < 0.08) {
+                        if (!isPinching) {
+                            isPinching = true;
+                            if (gameActive && !isPaused && !hookPos.isDropping) {
+                                triggerHookDrop();
+                            }
+                        }
+                    } else {
+                        isPinching = false;
+                    }
+                } else {
+                    isHandDetected = false;
+                    handStatusBadge.innerText = "Gunakan Mouse";
+                    handStatusBadge.className = "absolute bottom-1 left-1/2 -translate-x-1/2 text-[9px] bg-blue-500/90 text-white font-semibold px-1.5 py-0.5 rounded-full whitespace-nowrap";
+                }
+                cameraCtx.restore();
+            });
+
+            const camera = new Camera(videoElement, {
+                onFrame: async () => {
+                    await hands.send({ image: videoElement });
+                },
+                width: 320,
+                height: 240
+            });
+            camera.start().catch(() => {
+                console.warn("Kamera tidak diizinkan atau tidak ditemukan. Menggunakan Mouse Fallback.");
+            });
+        }
+
+        // =========================================================================
+        // 6. GAME FLOW & STATE CONTROL
+        // =========================================================================
+        function startGame() {
+            document.getElementById('modalStart').classList.add('hidden');
+            score = 0;
+            currentQuestionIndex = 0;
+            correctAnswersCount = 0;
+            wrongAnswersCount = 0;
+            gameActive = true;
+            isPaused = false;
+            updateUI();
+            loadQuestion(currentQuestionIndex);
+        }
+
+        function pauseGame() {
+            if (!gameActive) return;
+            isPaused = true;
+            document.getElementById('modalPause').classList.remove('hidden');
+        }
+
+        function resumeGame() {
+            isPaused = false;
+            document.getElementById('modalPause').classList.add('hidden');
+        }
+
+        function restartGame() {
+            document.getElementById('modalPause').classList.add('hidden');
+            document.getElementById('modalResult').classList.add('hidden');
+            startGame();
+        }
+
+        function loadQuestion(index) {
+            if (index >= QUESTION_BANK.length) {
+                finishGame();
+                return;
+            }
+
+            const q = QUESTION_BANK[index];
+            const choices = shuffleArray(q.choices);
+
+            // Spawn 3 Fish with Choices
+            const waterTop = 160;
+            const waterBottom = canvas.height - 100;
+            const availableY = [
+                waterTop + 80,
+                waterTop + (waterBottom - waterTop) / 2,
+                waterBottom - 40
+            ];
+
+            const colors = [
+                { body: '#FF6B6B', fin: '#EE5253' }, // Red / Pink
+                { body: '#4D96FF', fin: '#192A56' }, // Blue
+                { body: '#FFD93D', fin: '#FF9F1A' }  // Yellow/Orange
+            ];
+
+            fishes = choices.map((choice, i) => {
+                const dir = Math.random() > 0.5 ? 1 : -1;
+                return {
+                    val: choice,
+                    isCorrect: choice === q.answer,
+                    x: dir === 1 ? -100 - (i * 120) : canvas.width + 100 + (i * 120),
+                    y: availableY[i],
+                    speed: (Math.random() * 1.2 + 1.2) * dir,
+                    radius: 36,
+                    color: colors[i % colors.length],
+                    tailAngle: 0
+                };
+            });
+
+            // Reset Hook Position
+            hookPos.y = 140;
+            hookPos.isDropping = false;
+            hookPos.caughtFish = null;
+
+            updateUI();
+        }
+
+        function triggerHookDrop() {
+            hookPos.isDropping = true;
+            sfx.playSplash();
+        }
+
+        function updateUI() {
+            document.getElementById('questionProgress').innerText = `${currentQuestionIndex + 1}/${QUESTION_BANK.length}`;
+            document.getElementById('scoreText').innerText = score;
+        }
+
+        // =========================================================================
+        // 7. VALIDASI JAWABAN & EDUKASI FEEDBACK
+        // =========================================================================
+        function validateCatch(fish) {
+            const q = QUESTION_BANK[currentQuestionIndex];
+
+            if (fish.isCorrect) {
+                // Jawaban Benar
+                score += 10;
+                correctAnswersCount++;
+                sfx.playSuccess();
+
+                // Animasi Singkat Lalu Lanjut Soal Berikutnya
+                setTimeout(() => {
+                    currentQuestionIndex++;
+                    loadQuestion(currentQuestionIndex);
+                }, 800);
+            } else {
+                // Jawaban Salah -> Tampilkan Edukasi
+                wrongAnswersCount++;
+                sfx.playError();
+                showEduFeedback(q, fish.val);
+            }
+            updateUI();
+        }
+
+        function showEduFeedback(q, chosenVal) {
+            isPaused = true;
+            const content = document.getElementById('feedbackContent');
+            
+            // Perhitungan perkalian berulang / bersusun
+            const tens = Math.floor(q.num1 / 10) * 10;
+            const units = q.num1 % 10;
+
+            content.innerHTML = `
+                <div class="space-y-2">
+                    <p class="font-bold text-slate-800">Soal: <span class="text-amber-700 font-extrabold text-base">${q.num1} × ${q.num2}</span></p>
+                    <p class="text-rose-600">Jawaban kamu: <b class="line-through">${chosenVal}</b> (Belum Tepat)</p>
+                    
+                    <div class="bg-white p-3 rounded-xl border border-amber-300 space-y-1 my-2">
+                        <p class="font-bold text-amber-800 text-xs uppercase tracking-wider">Cara Mudah Menghitungnya:</p>
+                        <p>1. Pisahkan ${q.num1} menjadi <b>${tens}</b> dan <b>${units}</b></p>
+                        <p>2. Kalikan puluhan: <b>${tens} × ${q.num2} = ${tens * q.num2}</b></p>
+                        <p>3. Kalikan satuan: <b>${units} × ${q.num2} = ${units * q.num2}</b></p>
+                        <p>4. Jumlahkan hasilnya: <b>${tens * q.num2} + ${units * q.num2} = <span class="text-emerald-700 font-extrabold text-base">${q.answer}</span></b></p>
+                    </div>
+
+                    <p class="text-xs text-slate-600 italic">Jadi, hasil dari ${q.num1} × ${q.num2} yang benar adalah <b>${q.answer}</b>.</p>
+                </div>
+            `;
+
+            document.getElementById('modalFeedback').classList.remove('hidden');
+        }
+
+        function closeFeedbackAndResume() {
+            document.getElementById('modalFeedback').classList.add('hidden');
+            // Reset kail agar anak bisa mencoba lagi soal yang sama
+            hookPos.y = 140;
+            hookPos.isDropping = false;
+            hookPos.caughtFish = null;
+            isPaused = false;
+        }
+
+        function finishGame() {
+            gameActive = false;
+            sfx.playWin();
+
+            document.getElementById('resTotalScore').innerText = score;
+            document.getElementById('resCorrectCount').innerText = correctAnswersCount;
+            document.getElementById('resWrongCount').innerText = wrongAnswersCount;
+
+            const motiv = document.getElementById('motivationText');
+            if (score >= 120) {
+                motiv.innerText = "Luar Biasa! Kamu Sangat Mahir Perkalian! 🌟";
+            } else if (score >= 80) {
+                motiv.innerText = "Kerja Bagus! Terus Tingkatkan Kemampuanmu! 👍";
+            } else {
+                motiv.innerText = "Tetap Semangat! Belajar Lagi dan Coba Lagi Ya! 💪";
+            }
+
+            document.getElementById('modalResult').classList.remove('hidden');
+        }
+
+        // =========================================================================
+        // 8. MAIN ANIMATION & RENDERING LOOP
+        // =========================================================================
+        function gameLoop() {
+            // Clear Screen
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Update & Draw Game Elements
+            drawBackgroundAndWater();
+
+            if (gameActive && !isPaused) {
+                updateHookAndFishes();
+            }
+
+            drawFishes();
+            drawHookAndLine();
+            drawFishermanAndBoat();
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        // --- DRAWING FUNCTIONS ---
+
+        function drawBackgroundAndWater() {
+            const waterTop = 140;
+
+            // Sky Background
+            const skyGrad = ctx.createLinearGradient(0, 0, 0, waterTop);
+            skyGrad.addColorStop(0, '#7DD3FC'); // Sky Blue
+            skyGrad.addColorStop(1, '#BAE6FD');
+            ctx.fillStyle = skyGrad;
+            ctx.fillRect(0, 0, canvas.width, waterTop);
+
+            // Sun
+            ctx.fillStyle = '#FDE047';
+            ctx.beginPath();
+            ctx.arc(canvas.width - 80, 50, 35, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Clouds
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+            ctx.beginPath();
+            ctx.arc(100, 40, 20, 0, Math.PI * 2);
+            ctx.arc(120, 35, 25, 0, Math.PI * 2);
+            ctx.arc(140, 40, 20, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Water Lake Body Gradient
+            const waterGrad = ctx.createLinearGradient(0, waterTop, 0, canvas.height);
+            waterGrad.addColorStop(0, '#0284C7'); // Deep Water Blue
+            waterGrad.addColorStop(1, '#0369A1');
+            ctx.fillStyle = waterGrad;
+            ctx.fillRect(0, waterTop, canvas.width, canvas.height - waterTop);
+
+            // Animated Surface Waves
+            ctx.fillStyle = '#38BDF8';
+            ctx.beginPath();
+            ctx.moveTo(0, waterTop);
+            const time = Date.now() * 0.003;
+            for (let x = 0; x <= canvas.width; x += 30) {
+                const y = waterTop + Math.sin(x * 0.02 + time) * 5;
+                ctx.lineTo(x, y);
+            }
+            ctx.lineTo(canvas.width, waterTop + 15);
+            ctx.lineTo(0, waterTop + 15);
+            ctx.fill();
+
+            // Underwater Rising Bubbles
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+            bubbles.forEach(b => {
+                b.y -= b.speed;
+                if (b.y < waterTop) b.y = canvas.height + 10;
+                ctx.beginPath();
+                ctx.arc(b.x, b.y, b.radius, 0, Math.PI * 2);
+                ctx.fill();
+            });
+
+            // BANNER SOAL MATEMATIKA KARTUN (DI ATAS DANAU)
+            if (gameActive && QUESTION_BANK[currentQuestionIndex]) {
+                const q = QUESTION_BANK[currentQuestionIndex];
+                const qText = `${q.num1} × ${q.num2} = ?`;
+
+                ctx.save();
+                
+                // Banner Dimensions & Position
+                const bannerW = Math.min(320, canvas.width * 0.8);
+                const bannerH = 64;
+                const bannerX = canvas.width / 2 - bannerW / 2;
+                const bannerY = 65; // Positioned safely below dashboard header
+
+                // Shadow for 3D Depth
+                ctx.shadowColor = 'rgba(0, 0, 0, 0.3)';
+                ctx.shadowBlur = 12;
+                ctx.shadowOffsetY = 6;
+
+                // Card Background (Bright Gold / Cornsilk)
+                ctx.fillStyle = '#FFF8DC';
+                ctx.strokeStyle = '#D97706';
+                ctx.lineWidth = 5;
+
+                ctx.beginPath();
+                ctx.roundRect(bannerX, bannerY, bannerW, bannerH, 20);
+                ctx.fill();
+                ctx.stroke();
+
+                // Inner Border Accent
+                ctx.shadowColor = 'transparent';
+                ctx.strokeStyle = '#FBBF24';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.roundRect(bannerX + 3, bannerY + 3, bannerW - 6, bannerH - 6, 17);
+                ctx.stroke();
+
+                // Question Text (High-contrast Dark Amber)
+                ctx.fillStyle = '#451A03';
+                ctx.font = '900 34px Fredoka, Quicksand, sans-serif';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(qText, canvas.width / 2, bannerY + bannerH / 2);
+                
+                ctx.restore();
+            }
+        }
+
+        function drawFishermanAndBoat() {
+            const boatX = hookPos.x;
+            const boatY = 145;
+
+            ctx.save();
+            ctx.translate(boatX, boatY);
+
+            // Wooden Boat
+            ctx.fillStyle = '#854D0E';
+            ctx.beginPath();
+            ctx.moveTo(-45, 0);
+            ctx.lineTo(45, 0);
+            ctx.lineTo(35, 18);
+            ctx.lineTo(-35, 18);
+            ctx.closePath();
+            ctx.fill();
+
+            // Fisherman Body & Hat
+            ctx.fillStyle = '#EA580C'; // Orange Shirt
+            ctx.beginPath();
+            ctx.arc(0, -12, 12, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Head
+            ctx.fillStyle = '#FED7AA';
+            ctx.beginPath();
+            ctx.arc(0, -26, 10, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Straw Hat
+            ctx.fillStyle = '#FACC15';
+            ctx.beginPath();
+            ctx.ellipse(0, -32, 18, 5, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.restore();
+        }
+
+        function updateHookAndFishes() {
+            // Smooth horizontal movement towards target Hand X
+            hookPos.x += (hookPos.targetX - hookPos.x) * 0.15;
+
+            // Clamp hook X inside canvas screen
+            hookPos.x = Math.max(50, Math.min(canvas.width - 50, hookPos.x));
+
+            // Dropping / Pulling Up Mechanism
+            if (hookPos.isDropping) {
+                if (!hookPos.caughtFish) {
+                    hookPos.y += HOOK_SPEED;
+
+                    // Collision Detection with Fishes
+                    fishes.forEach(fish => {
+                        const dist = Math.hypot(fish.x - hookPos.x, fish.y - hookPos.y);
+                        if (dist < fish.radius + 15) {
+                            hookPos.caughtFish = fish;
+                            validateCatch(fish);
+                        }
+                    });
+
+                    // Max Depth Reached
+                    if (hookPos.y >= canvas.height * HOOK_MAX_Y_RATIO) {
+                        hookPos.isDropping = false; // Start retracting empty hook
+                    }
+                } else {
+                    // Pull caught fish back up to surface
+                    hookPos.y -= HOOK_SPEED * 1.2;
+                    hookPos.caughtFish.x = hookPos.x;
+                    hookPos.caughtFish.y = hookPos.y + 20;
+
+                    if (hookPos.y <= 140) {
+                        hookPos.isDropping = false;
+                    }
+                }
+            } else {
+                // Retract Hook back to top surface
+                if (hookPos.y > 140) {
+                    hookPos.y -= HOOK_SPEED * 1.5;
+                }
+            }
+
+            // Move uncaught fishes horizontally
+            fishes.forEach(fish => {
+                if (fish !== hookPos.caughtFish) {
+                    fish.x += fish.speed;
+                    fish.tailAngle += 0.15;
+
+                    // Wrap around screen boundaries
+                    if (fish.speed > 0 && fish.x > canvas.width + 80) fish.x = -80;
+                    if (fish.speed < 0 && fish.x < -80) fish.x = canvas.width + 80;
+                }
+            });
+        }
+
+        function drawHookAndLine() {
+            // Line from fisherman rod down to hook
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(hookPos.x, 120);
+            ctx.lineTo(hookPos.x, hookPos.y);
+            ctx.stroke();
+
+            // Metal Hook Shape
+            ctx.save();
+            ctx.translate(hookPos.x, hookPos.y);
+            ctx.strokeStyle = '#D1D5DB';
+            ctx.lineWidth = 4;
+            ctx.beginPath();
+            ctx.arc(-6, 0, 8, 0, Math.PI, false);
+            ctx.lineTo(-14, -6);
+            ctx.stroke();
+            ctx.restore();
+        }
+
+        function drawFishes() {
+            fishes.forEach(fish => {
+                ctx.save();
+                ctx.translate(fish.x, fish.y);
+                if (fish.speed < 0) ctx.scale(-1, 1); // Flip fish direction
+
+                // Wiggling Tail
+                const tailWiggle = Math.sin(fish.tailAngle) * 8;
+                ctx.fillStyle = fish.color.fin;
+                ctx.beginPath();
+                ctx.moveTo(-fish.radius + 5, 0);
+                ctx.lineTo(-fish.radius - 20, -15 + tailWiggle);
+                ctx.lineTo(-fish.radius - 20, 15 + tailWiggle);
+                ctx.closePath();
+                ctx.fill();
+
+                // Round Fish Body
+                ctx.fillStyle = fish.color.body;
+                ctx.beginPath();
+                ctx.ellipse(0, 0, fish.radius + 6, fish.radius - 6, 0, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Eye
+                ctx.fillStyle = '#FFFFFF';
+                ctx.beginPath();
+                ctx.arc(15, -6, 7, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.fillStyle = '#000000';
+                ctx.beginPath();
+                ctx.arc(17, -6, 3, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Number Answer Circle Badge on Fish Body
+                ctx.save();
+                if (fish.speed < 0) ctx.scale(-1, 1); // Keep number right side up
+                ctx.fillStyle = '#FFFFFF';
+                ctx.strokeStyle = '#334155';
+                ctx.lineWidth = 3;
+                ctx.beginPath();
+                ctx.arc(0, 2, 18, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.stroke();
+
+                // Number Text
+                ctx.fillStyle = '#0F172A';
+                ctx.font = '800 20px Fredoka, Quicksand, sans-serif';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(fish.val, 0, 3);
+                ctx.restore();
+
+                ctx.restore();
+            });
+        }
+    </script>
+</body>
+</html>
